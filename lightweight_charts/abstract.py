@@ -478,17 +478,26 @@ class SeriesCommon(Pane):
         start_time: Union[TIME, tuple, list],
         end_time: Optional[TIME] = None,
         color: str = "rgba(252, 219, 3, 0.2)",
-        round: bool = False,
+        width: int = 0,
+        style: str = "solid",
+        func=None,
     ):
         """
         Creates a vertical line or span across the chart.\n
         Start time and end time can be used together, or end_time can be
         omitted and a single time or a list of times can be passed to start_time.
         """
-        if round:
-            start_time = self._single_datetime_format(start_time)
-            end_time = self._single_datetime_format(end_time) if end_time else None
-        return VerticalSpan(self, start_time, end_time, color)
+        import pandas as pd
+        if isinstance(start_time, (tuple, list)):
+            # Несколько линий
+            for t in start_time:
+                self.vertical_span(t, t, color, width, style, func)
+            return
+        if end_time is None:
+            end_time = start_time
+        start_time = pd.to_datetime(start_time)
+        end_time = pd.to_datetime(end_time)
+        return VerticalSpan(self._chart, start_time, end_time, color, width, style, func)
 
 
 class Line(SeriesCommon):
@@ -592,8 +601,7 @@ class Histogram(SeriesCommon):
         self.color = color
         self.run_script(
             f"""
-        {self.id} = {chart.id}.createHistogramSeries(
-            "{name}",
+        {self.id} = {chart.id}.chart.addSeries(window.LightweightCharts.HistogramSeries,
             {{
                 color: '{color}',
                 lastValueVisible: {jbool(price_label)},

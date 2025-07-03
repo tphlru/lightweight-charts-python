@@ -8,9 +8,6 @@ from webview.errors import JavascriptException
 from lightweight_charts import abstract
 from .util import parse_event_message, FLOAT
 
-import os
-import threading
-
 
 class CallbackAPI:
     def __init__(self, emit_queue):
@@ -36,13 +33,15 @@ class PyWV:
     def create_window(
         self, width, height, x, y, screen=None, on_top=False, maximize=False, title=""
     ):
-        screen = webview.screens[screen] if screen is not None else None
+        screen_obj = (
+            webview.screens[screen] if screen is not None else webview.screens[0]
+        )
         if maximize:
             if screen is None:
                 active_screen = webview.screens[0]
                 width, height = active_screen.width, active_screen.height
             else:
-                width, height = screen.width, screen.height
+                width, height = screen_obj.width, screen_obj.height
 
         self.windows.append(
             webview.create_window(
@@ -53,7 +52,7 @@ class PyWV:
                 height=height,
                 x=x,
                 y=y,
-                screen=screen,
+                screen=screen_obj,
                 on_top=on_top,
                 background_color="#000000",
             )
@@ -91,18 +90,17 @@ class PyWV:
 
                             window.evaluate_js(arg)
 
-                        except webview.errors.JavascriptException as e:
-
+                        except JavascriptException as e:
                             # print(f"Js: {str(arg)}")
                             print(f"JavaScript Error 1: {e}")  # Debugging output
-                except KeyError as e:
+                except KeyError:
                     return
                 except JavascriptException as e:
                     msg = json.loads(str(e))
                     print(msg)
                     raise JavascriptException(
                         f"\n\nscript -> '{arg}',\nerror -> {msg['name']}[{msg['line']}:{msg['column']}]\n{msg['message']}"
-                    )
+                    ) from e
 
 
 class WebviewHandler:
@@ -166,10 +164,10 @@ class Chart(abstract.AbstractChart):
         self,
         width: int = 800,
         height: int = 600,
-        x: int = None,
-        y: int = None,
+        x: typing.Optional[int] = None,
+        y: typing.Optional[int] = None,
         title: str = "",
-        screen: int = None,
+        screen: typing.Optional[int] = None,
         on_top: bool = False,
         maximize: bool = False,
         debug: bool = False,
@@ -189,7 +187,7 @@ class Chart(abstract.AbstractChart):
             js_api_code="pywebview.api.callback",
         )
 
-        abstract.Window._return_q = Chart.WV.return_queue
+        setattr(abstract.Window, "_return_q", Chart.WV.return_queue)
 
         self.is_alive = True
 
@@ -258,9 +256,11 @@ class Chart(abstract.AbstractChart):
 
     def hide(self):
         """
-        Hides the chart window.\n
+        Hides the chart window.
+
+        This method hides the chart window associated with this Chart instance.
         """
-        self._q.put((self._i, "hide"))
+        Chart.WV.function_call_queue.put((self._i, "hide"))
 
     def exit(self):
         """

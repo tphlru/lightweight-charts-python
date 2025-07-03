@@ -8,6 +8,7 @@ import { IChartApi, ISeriesApi, SeriesType } from "lightweight-charts";
 import { HorizontalLine } from "../horizontal-line/horizontal-line";
 import { RayLine } from "../horizontal-line/ray-line";
 import { VerticalLine } from "../vertical-line/vertical-line";
+import { VerticalSpan } from "../vertical-span/vertical-span";
 
 
 interface Icon {
@@ -164,6 +165,9 @@ export class ToolBox {
                     break;
                 case "TrendLine":
                     this._drawingTool.addNewDrawing(new TrendLine(d.points[0], d.points[1], d.options));
+                    break;
+                case "VerticalSpan":
+                    this._drawingTool.addNewDrawing(new VerticalSpan(d.points[0], d.points[1], d.options));
                     break;
                 case "HorizontalLine":
                     this._drawingTool.addNewDrawing(new HorizontalLine(d.points[0], d.options));
