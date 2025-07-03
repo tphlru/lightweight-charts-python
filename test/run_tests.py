@@ -1,3 +1,6 @@
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import unittest
 
 from test_returns import TestReturns
@@ -15,7 +18,7 @@ TEST_CASES = [
     TestChart,
 ]
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     loader = unittest.TestLoader()
     cases = [loader.loadTestsFromTestCase(module) for module in TEST_CASES]
     suite = unittest.TestSuite(cases)

@@ -268,3 +268,6 @@ class Chart(abstract.AbstractChart):
         """
         Chart.WV.exit()
         self.is_alive = False
+
+    def add_pane(self):
+        return super().add_pane()

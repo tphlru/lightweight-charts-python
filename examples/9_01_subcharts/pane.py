@@ -43,7 +43,6 @@ if __name__ == "__main__":
 
     df = pd.read_csv(path)
 
-    df = df.head(10)
 
     chart.set(df)
 
@@ -52,10 +51,9 @@ if __name__ == "__main__":
     line = chart.create_line("SMA 5")
     line.set(sma_data)
 
-    # Subchart with MACD
 
+    # Subchart with MACD in the new pane
     macd_data = calculate_macd(df)
-
     histogram = chart.create_histogram("MACD", pane_index=1)
     histogram.set(macd_data[["time", "MACD", "Signal", "Histogram"]])
 

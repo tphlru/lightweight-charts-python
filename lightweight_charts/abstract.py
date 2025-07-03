@@ -1209,3 +1209,10 @@ class AbstractChart(Candlestick, Pane):
         args = locals()
         del args["self"]
         return self.win.create_subchart(*args.values())
+
+    def add_pane(self):
+        """
+        Adds a new pane to the chart. Returns None.
+        """
+        self.run_script(f"{self.id}.chart.model()._private__getOrCreatePane({self.id}.chart.model()._internal_panes().length)")
+        return None
