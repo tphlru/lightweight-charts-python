@@ -1,6 +1,6 @@
 /*!
  * @license
- * TradingView Lightweight Charts™ v5.0.3
+ * TradingView Lightweight Charts™ v5.0.8
  * Copyright (c) 2025 TradingView, Inc.
  * Licensed under Apache License 2.0 https://www.apache.org/licenses/LICENSE-2.0
  */
@@ -1238,6 +1238,10 @@
          * This mode disables rendering of the crosshair.
          */
         CrosshairMode[CrosshairMode["Hidden"] = 2] = "Hidden";
+        /**
+         * This mode sticks crosshair's horizontal line to the price value of a single-value series or to the open/high/low/close price of OHLC-based series.
+         */
+        CrosshairMode[CrosshairMode["MagnetOHLC"] = 3] = "MagnetOHLC";
     })(CrosshairMode || (CrosshairMode = {}));
     class Crosshair extends DataSource {
         constructor(model, options) {
@@ -1245,7 +1249,7 @@
             this._private__pane = null;
             this._private__price = NaN;
             this._private__index = 0;
-            this._private__visible = true;
+            this._private__visible = false; // initially the crosshair should not be visible, until the user interacts.
             this._private__priceAxisViews = new Map();
             this._private__subscribed = false;
             this._private__crosshairPaneViewCache = new WeakMap();
@@ -1549,10 +1553,14 @@
         }
     }
 
+    class FormatterBase {
+        formatTickmarks(prices) {
+            return prices.map((price) => this.format(price));
+        }
+    }
+
     const formatterOptions = {
-        _internal_decimalSign: '.',
-        _internal_decimalSignFractional: '\'',
-    };
+        _internal_decimalSign: '.'};
     /**
      * @param value - The number of convert.
      * @param length - The length. Must be between 0 and 16 inclusive.
@@ -1573,8 +1581,9 @@
         const dummyString = '0000000000000000';
         return (dummyString + value.toString()).slice(-length);
     }
-    class PriceFormatter {
+    class PriceFormatter extends FormatterBase {
         constructor(priceScale, minMove) {
+            super();
             if (!minMove) {
                 minMove = 1;
             }
@@ -1641,8 +1650,9 @@
         }
     }
 
-    class VolumeFormatter {
+    class VolumeFormatter extends FormatterBase {
         constructor(precision) {
+            super();
             this._private__precision = precision;
         }
         format(vol) {
@@ -3366,7 +3376,11 @@
         _private__recreateFormatter() {
             switch (this._private__options.priceFormat.type) {
                 case 'custom': {
-                    this._private__formatter = { format: this._private__options.priceFormat.formatter };
+                    const formatter = this._private__options.priceFormat.formatter;
+                    this._private__formatter = {
+                        format: formatter,
+                        formatTickmarks: this._private__options.priceFormat.tickmarksFormatter ?? ((prices) => prices.map(formatter)),
+                    };
                     break;
                 }
                 case 'volume': {
@@ -3393,6 +3407,15 @@
         }
     }
 
+    const magnetPlotRowKeys = [
+        3 /* PlotRowValueIndex.Close */,
+    ];
+    const magnetOHLCPlotRowKeys = [
+        0 /* PlotRowValueIndex.Open */,
+        1 /* PlotRowValueIndex.High */,
+        2 /* PlotRowValueIndex.Low */,
+        3 /* PlotRowValueIndex.Close */,
+    ];
     class Magnet {
         constructor(options) {
             this._private__options = options;
@@ -3425,7 +3448,10 @@
                 }
                 // convert bar to pixels
                 const firstPrice = ensure(series._internal_firstValue());
-                return acc.concat([ps._internal_priceToCoordinate(bar._internal_value[3 /* PlotRowValueIndex.Close */], firstPrice._internal_value)]);
+                const plotRowKeys = this._private__options.mode === 3 /* CrosshairMode.MagnetOHLC */
+                    ? magnetOHLCPlotRowKeys
+                    : magnetPlotRowKeys;
+                return acc.concat(plotRowKeys.map((key) => ps._internal_priceToCoordinate(bar._internal_value[key], firstPrice._internal_value)));
             }, []);
             if (candidates.length === 0) {
                 return res;
@@ -3435,6 +3461,48 @@
             res = defaultPriceScale._internal_coordinateToPrice(nearest, firstValue);
             return res;
         }
+    }
+
+    function clamp(value, minVal, maxVal) {
+        return Math.min(Math.max(value, minVal), maxVal);
+    }
+    function isBaseDecimal(value) {
+        if (value < 0) {
+            return false;
+        }
+        for (let current = value; current > 1; current /= 10) {
+            if ((current % 10) !== 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+    function greaterOrEqual(x1, x2, epsilon) {
+        return (x2 - x1) <= epsilon;
+    }
+    function equal(x1, x2, epsilon) {
+        return Math.abs(x1 - x2) < epsilon;
+    }
+    // We can't use Math.min(...arr) because that would only support arrays shorter than 65536 items.
+    function min(arr) {
+        if (arr.length < 1) {
+            throw Error('array is empty');
+        }
+        let minVal = arr[0];
+        for (let i = 1; i < arr.length; ++i) {
+            if (arr[i] < minVal) {
+                minVal = arr[i];
+            }
+        }
+        return minVal;
+    }
+    function ceiledEven(x) {
+        const ceiled = Math.ceil(x);
+        return (ceiled % 2 !== 0) ? ceiled - 1 : ceiled;
+    }
+    function ceiledOdd(x) {
+        const ceiled = Math.ceil(x);
+        return (ceiled % 2 === 0) ? ceiled - 1 : ceiled;
     }
 
     class GridRenderer extends BitmapCoordinatesPaneRenderer {
@@ -3616,48 +3684,6 @@
         return f1._internal_logicalOffset === f2._internal_logicalOffset && f1._internal_coordOffset === f2._internal_coordOffset;
     }
 
-    function clamp(value, minVal, maxVal) {
-        return Math.min(Math.max(value, minVal), maxVal);
-    }
-    function isBaseDecimal(value) {
-        if (value < 0) {
-            return false;
-        }
-        for (let current = value; current > 1; current /= 10) {
-            if ((current % 10) !== 0) {
-                return false;
-            }
-        }
-        return true;
-    }
-    function greaterOrEqual(x1, x2, epsilon) {
-        return (x2 - x1) <= epsilon;
-    }
-    function equal(x1, x2, epsilon) {
-        return Math.abs(x1 - x2) < epsilon;
-    }
-    // We can't use Math.min(...arr) because that would only support arrays shorter than 65536 items.
-    function min(arr) {
-        if (arr.length < 1) {
-            throw Error('array is empty');
-        }
-        let minVal = arr[0];
-        for (let i = 1; i < arr.length; ++i) {
-            if (arr[i] < minVal) {
-                minVal = arr[i];
-            }
-        }
-        return minVal;
-    }
-    function ceiledEven(x) {
-        const ceiled = Math.ceil(x);
-        return (ceiled % 2 !== 0) ? ceiled - 1 : ceiled;
-    }
-    function ceiledOdd(x) {
-        const ceiled = Math.ceil(x);
-        return (ceiled % 2 === 0) ? ceiled - 1 : ceiled;
-    }
-
     class PriceTickSpanCalculator {
         constructor(base, integralDividers) {
             this._private__base = base;
@@ -3762,7 +3788,30 @@
                 this._private__marks = [];
                 return;
             }
-            let span = this._internal_tickSpan(high, low);
+            const span = this._internal_tickSpan(high, low);
+            this._private__updateMarks(firstValue, span, high, low, minCoord, maxCoord);
+            if (priceScale._internal_hasVisibleEdgeMarks() && this._private__shouldApplyEdgeMarks(span, low, high)) {
+                const padding = this._private__priceScale._internal_getEdgeMarksPadding();
+                this._private__applyEdgeMarks(firstValue, span, minCoord, maxCoord, padding, padding * 2);
+            }
+            const logicals = this._private__marks.map((mark) => mark._internal_logical);
+            const labels = this._private__priceScale._internal_formatLogicalTickmarks(logicals);
+            for (let i = 0; i < this._private__marks.length; i++) {
+                this._private__marks[i]._internal_label = labels[i];
+            }
+        }
+        _internal_marks() {
+            return this._private__marks;
+        }
+        _private__fontHeight() {
+            return this._private__priceScale._internal_fontSize();
+        }
+        _private__tickMarkHeight() {
+            return Math.ceil(this._private__fontHeight() * TICK_DENSITY);
+        }
+        _private__updateMarks(firstValue, span, high, low, minCoord, maxCoord) {
+            const marks = this._private__marks;
+            const priceScale = this._private__priceScale;
             let mod = high % span;
             mod += mod < 0 ? span : 0;
             const sign = (high >= low) ? 1 : -1;
@@ -3779,14 +3828,16 @@
                 if (coord < minCoord || coord > maxCoord) {
                     continue;
                 }
-                if (targetIndex < this._private__marks.length) {
-                    this._private__marks[targetIndex]._internal_coord = coord;
-                    this._private__marks[targetIndex]._internal_label = priceScale._internal_formatLogical(logical);
+                if (targetIndex < marks.length) {
+                    marks[targetIndex]._internal_coord = coord;
+                    marks[targetIndex]._internal_label = priceScale._internal_formatLogical(logical);
+                    marks[targetIndex]._internal_logical = logical;
                 }
                 else {
-                    this._private__marks.push({
+                    marks.push({
                         _internal_coord: coord,
                         _internal_label: priceScale._internal_formatLogical(logical),
+                        _internal_logical: logical,
                     });
                 }
                 targetIndex++;
@@ -3796,16 +3847,43 @@
                     span = this._internal_tickSpan(logical * sign, low);
                 }
             }
-            this._private__marks.length = targetIndex;
+            marks.length = targetIndex;
         }
-        _internal_marks() {
-            return this._private__marks;
+        _private__applyEdgeMarks(firstValue, span, minCoord, maxCoord, minPadding, maxPadding) {
+            const marks = this._private__marks;
+            // top boundary
+            const topMark = this._private__computeBoundaryPriceMark(firstValue, minCoord, minPadding, maxPadding);
+            // bottom boundary
+            const bottomMark = this._private__computeBoundaryPriceMark(firstValue, maxCoord, -maxPadding, -minPadding);
+            const spanPx = this._private__logicalToCoordinateFunc(0, firstValue, true)
+                - this._private__logicalToCoordinateFunc(span, firstValue, true);
+            if (marks.length > 0 && marks[0]._internal_coord - topMark._internal_coord < spanPx / 2) {
+                marks.shift();
+            }
+            if (marks.length > 0 && bottomMark._internal_coord - marks[marks.length - 1]._internal_coord < spanPx / 2) {
+                marks.pop();
+            }
+            marks.unshift(topMark);
+            marks.push(bottomMark);
         }
-        _private__fontHeight() {
-            return this._private__priceScale._internal_fontSize();
+        _private__computeBoundaryPriceMark(firstValue, coord, minPadding, maxPadding) {
+            const avgPadding = (minPadding + maxPadding) / 2;
+            const value1 = this._private__coordinateToLogicalFunc(coord + minPadding, firstValue);
+            const value2 = this._private__coordinateToLogicalFunc(coord + maxPadding, firstValue);
+            const minValue = Math.min(value1, value2);
+            const maxValue = Math.max(value1, value2);
+            const valueSpan = Math.max(0.1, this._internal_tickSpan(maxValue, minValue));
+            const value = this._private__coordinateToLogicalFunc(coord + avgPadding, firstValue);
+            const roundedValue = value - (value % valueSpan);
+            const roundedCoord = this._private__logicalToCoordinateFunc(roundedValue, firstValue, true);
+            return { _internal_label: this._private__priceScale._internal_formatLogical(roundedValue), _internal_coord: roundedCoord, _internal_logical: roundedValue };
         }
-        _private__tickMarkHeight() {
-            return Math.ceil(this._private__fontHeight() * TICK_DENSITY);
+        _private__shouldApplyEdgeMarks(span, low, high) {
+            let range = ensure(this._private__priceScale._internal_priceRange());
+            if (this._private__priceScale._internal_isLog()) {
+                range = convertPriceRangeFromLog(range, this._private__priceScale._internal_getLogFormula());
+            }
+            return (range._internal_minValue() - low < span) && (high - range._internal_maxValue() < span);
         }
     }
 
@@ -3847,11 +3925,13 @@
             this._private__priceRange = null;
             this._private__priceRangeSnapshot = null;
             this._private__invalidatedForRange = { _internal_isValid: false, _internal_visibleBars: null };
+            this._private__isCustomPriceRange = false;
             this._private__marginAbove = 0;
             this._private__marginBelow = 0;
             this._private__onMarksChanged = new Delegate();
             this._private__modeChanged = new Delegate();
             this._private__dataSources = [];
+            this._private__formatterSource = null;
             this._private__cachedOrderedSources = null;
             this._private__marksCache = null;
             this._private__scaleStartPoint = null;
@@ -3896,6 +3976,9 @@
         _internal_isAutoScale() {
             return this._private__options.autoScale;
         }
+        _internal_isCustomPriceRange() {
+            return this._private__isCustomPriceRange;
+        }
         _internal_isLog() {
             return this._private__options.mode === 1 /* PriceScaleMode.Logarithmic */;
         }
@@ -3904,6 +3987,9 @@
         }
         _internal_isIndexedTo100() {
             return this._private__options.mode === 3 /* PriceScaleMode.IndexedTo100 */;
+        }
+        _internal_getLogFormula() {
+            return this._private__logFormula;
         }
         _internal_mode() {
             return {
@@ -3997,6 +4083,10 @@
             }
             this._private__marksCache = null;
             this._private__priceRange = newPriceRange;
+        }
+        _internal_setCustomPriceRange(newPriceRange) {
+            this._internal_setPriceRange(newPriceRange);
+            this._private__toggleCustomPriceRange(newPriceRange !== null);
         }
         _internal_isEmpty() {
             this._private__makeSureItIsValid();
@@ -4097,19 +4187,9 @@
             return this._private__dataSources;
         }
         _internal_orderedSources() {
-            if (this._private__cachedOrderedSources) {
-                return this._private__cachedOrderedSources;
+            if (!this._private__cachedOrderedSources) {
+                this._private__cachedOrderedSources = sortSources(this._private__dataSources);
             }
-            let sources = [];
-            for (let i = 0; i < this._private__dataSources.length; i++) {
-                const ds = this._private__dataSources[i];
-                if (ds._internal_zorder() === null) {
-                    ds._internal_setZorder(i + 1);
-                }
-                sources.push(ds);
-            }
-            sources = sortSources(sources);
-            this._private__cachedOrderedSources = sources;
             return this._private__cachedOrderedSources;
         }
         _internal_addDataSource(source) {
@@ -4283,8 +4363,18 @@
                     return this._private__formatPrice(logical);
             }
         }
+        _internal_formatLogicalTickmarks(logicals) {
+            switch (this._private__options.mode) {
+                case 2 /* PriceScaleMode.Percentage */:
+                    return this._private__formatPercentageTickmarks(logicals);
+                case 3 /* PriceScaleMode.IndexedTo100 */:
+                    return this._internal_formatter().formatTickmarks(logicals);
+                default:
+                    return this._private__formatTickmarks(logicals);
+            }
+        }
         _internal_formatPriceAbsolute(price) {
-            return this._private__formatPrice(price, ensureNotNull(this._private__formatterSource())._internal_formatter());
+            return this._private__formatPrice(price, ensureNotNull(this._private__formatterSource)._internal_formatter());
         }
         _internal_formatPricePercentage(price, baseValue) {
             price = toPercent(price, baseValue);
@@ -4302,12 +4392,26 @@
         _internal_updateAllViews() {
             this._private__dataSources.forEach((s) => s._internal_updateAllViews());
         }
+        _internal_hasVisibleEdgeMarks() {
+            return this._private__options.ensureEdgeTickMarksVisible && this._internal_isAutoScale();
+        }
+        _internal_getEdgeMarksPadding() {
+            return this._internal_fontSize() / 2;
+        }
         _internal_updateFormatter() {
             this._private__marksCache = null;
-            const formatterSource = this._private__formatterSource();
+            let zOrder = Infinity;
+            this._private__formatterSource = null;
+            // choose source with the lowest zorder
+            for (const source of this._private__dataSources) {
+                if (source._internal_zorder() < zOrder) {
+                    zOrder = source._internal_zorder();
+                    this._private__formatterSource = source;
+                }
+            }
             let base = 100;
-            if (formatterSource !== null) {
-                base = Math.round(1 / formatterSource._internal_minMove());
+            if (this._private__formatterSource !== null) {
+                base = Math.round(1 / this._private__formatterSource._internal_minMove());
             }
             this._private__formatter = defaultPriceFormatter;
             if (this._internal_isPercentage()) {
@@ -4319,9 +4423,9 @@
                 base = 100;
             }
             else {
-                if (formatterSource !== null) {
+                if (this._private__formatterSource !== null) {
                     // user
-                    this._private__formatter = formatterSource._internal_formatter();
+                    this._private__formatter = this._private__formatterSource._internal_formatter();
                 }
             }
             this._private__markBuilder = new PriceTickMarkBuilder(this, base, this._private__coordinateToLogical.bind(this), this._private__logicalToCoordinate.bind(this));
@@ -4333,11 +4437,8 @@
         _internal_colorParser() {
             return this._private__colorParser;
         }
-        /**
-         * @returns The {@link IPriceDataSource} that will be used as the "formatter source" (take minMove for formatter).
-         */
-        _private__formatterSource() {
-            return this._private__dataSources[0] || null;
+        _private__toggleCustomPriceRange(v) {
+            this._private__isCustomPriceRange = v;
         }
         _private__topMarginPx() {
             return this._internal_isInverted()
@@ -4387,6 +4488,9 @@
         }
         // eslint-disable-next-line complexity
         _private__recalculatePriceRangeImpl() {
+            if (this._internal_isCustomPriceRange() && !this._internal_isAutoScale()) {
+                return;
+            }
             const visibleBars = this._private__invalidatedForRange._internal_visibleBars;
             if (visibleBars === null) {
                 return;
@@ -4432,6 +4536,10 @@
                     }
                 }
             }
+            if (this._internal_hasVisibleEdgeMarks()) {
+                marginAbove = Math.max(marginAbove, this._internal_getEdgeMarksPadding());
+                marginBelow = Math.max(marginBelow, this._internal_getEdgeMarksPadding());
+            }
             if (marginAbove !== this._private__marginAbove || marginBelow !== this._private__marginBelow) {
                 this._private__marginAbove = marginAbove;
                 this._private__marginBelow = marginBelow;
@@ -4441,7 +4549,7 @@
             if (priceRange !== null) {
                 // keep current range is new is empty
                 if (priceRange._internal_minValue() === priceRange._internal_maxValue()) {
-                    const formatterSource = this._private__formatterSource();
+                    const formatterSource = this._private__formatterSource;
                     const minMove = formatterSource === null || this._internal_isPercentage() || this._internal_isIndexedTo100() ? 1 : formatterSource._internal_minMove();
                     // if price range is degenerated to 1 point let's extend it by 10 min move values
                     // to avoid incorrect range and empty (blank) scale (in case of min tick much greater than 1)
@@ -4475,7 +4583,6 @@
                     this._private__logFormula = logFormulaForPriceRange(null);
                 }
             }
-            this._private__invalidatedForRange._internal_isValid = true;
         }
         _private__getCoordinateTransformer() {
             if (this._internal_isPercentage()) {
@@ -4498,18 +4605,35 @@
             }
             return formatter(value);
         }
+        _private__formatValues(values, formatter, fallbackFormatter) {
+            if (formatter === undefined) {
+                if (fallbackFormatter === undefined) {
+                    fallbackFormatter = this._internal_formatter();
+                }
+                return fallbackFormatter.formatTickmarks(values);
+            }
+            return formatter(values);
+        }
         _private__formatPrice(price, fallbackFormatter) {
             return this._private__formatValue(price, this._private__localizationOptions.priceFormatter, fallbackFormatter);
         }
+        _private__formatTickmarks(prices, fallbackFormatter) {
+            const priceFormatter = this._private__localizationOptions.priceFormatter;
+            return this._private__formatValues(prices, this._private__localizationOptions.tickmarksPriceFormatter ?? (priceFormatter ? (values) => values.map(priceFormatter) : undefined), fallbackFormatter);
+        }
         _private__formatPercentage(percentage, fallbackFormatter) {
             return this._private__formatValue(percentage, this._private__localizationOptions.percentageFormatter, fallbackFormatter);
+        }
+        _private__formatPercentageTickmarks(percentages, fallbackFormatter) {
+            const tickmarksPercentageFormatter = this._private__localizationOptions.percentageFormatter;
+            return this._private__formatValues(percentages, this._private__localizationOptions.tickmarksPercentageFormatter ?? (tickmarksPercentageFormatter ? (values) => values.map(tickmarksPercentageFormatter) : undefined), fallbackFormatter);
         }
     }
 
     function isSeries(source) {
         return source instanceof Series;
     }
-    const DEFAULT_STRETCH_FACTOR = 1000;
+    const DEFAULT_STRETCH_FACTOR = 1;
     const MIN_PANE_HEIGHT = 30;
     class Pane {
         constructor(timeScale, model) {
@@ -4519,6 +4643,7 @@
             this._private__width = 0;
             this._private__stretchFactor = DEFAULT_STRETCH_FACTOR;
             this._private__cachedOrderedSources = null;
+            this._private__preserveEmptyPane = false;
             this._private__destroyed = new Delegate();
             this._private__primitives = [];
             this._private__timeScale = timeScale;
@@ -4621,6 +4746,12 @@
             });
             this._internal_updateAllSources();
         }
+        _internal_setPreserveEmptyPane(preserve) {
+            this._private__preserveEmptyPane = preserve;
+        }
+        _internal_preserveEmptyPane() {
+            return this._private__preserveEmptyPane;
+        }
         _internal_series() {
             return this._private__dataSources.filter(isSeries);
         }
@@ -4634,14 +4765,16 @@
             }
             return this._private__leftPriceScale !== priceScale && this._private__rightPriceScale !== priceScale;
         }
-        _internal_addDataSource(source, targetScaleId, zOrder) {
-            const targetZOrder = (zOrder !== undefined) ? zOrder : this._private__getZOrderMinMax()._internal_maxZOrder + 1;
-            this._private__insertDataSource(source, targetScaleId, targetZOrder);
+        _internal_addDataSource(source, targetScaleId, keepSourcesOrder) {
+            this._private__insertDataSource(source, targetScaleId, keepSourcesOrder ? source._internal_zorder() : this._private__dataSources.length);
         }
-        _internal_removeDataSource(source) {
+        _internal_removeDataSource(source, keepSourceOrder) {
             const index = this._private__dataSources.indexOf(source);
             assert(index !== -1, 'removeDataSource: invalid data source');
             this._private__dataSources.splice(index, 1);
+            if (!keepSourceOrder) {
+                this._private__dataSources.forEach((ds, i) => ds._internal_setZorder(i));
+            }
             const priceScaleId = ensureNotNull(source._internal_priceScale())._internal_id();
             if (this._private__overlaySourcesByScaleId.has(priceScaleId)) {
                 const overlaySources = ensureDefined(this._private__overlaySourcesByScaleId.get(priceScaleId));
@@ -4658,9 +4791,6 @@
             // and it does not have source in their list
             if (priceScale && priceScale._internal_dataSources().indexOf(source) >= 0) {
                 priceScale._internal_removeDataSource(source);
-            }
-            if (priceScale !== null) {
-                priceScale._internal_invalidateSourcesCache();
                 this._internal_recalculatePriceScale(priceScale);
             }
             this._private__cachedOrderedSources = null;
@@ -4767,6 +4897,20 @@
             }
             return this._private__cachedOrderedSources;
         }
+        _internal_setSeriesOrder(series, order) {
+            order = clamp(order, 0, this._private__dataSources.length - 1);
+            const index = this._private__dataSources.indexOf(series);
+            assert(index !== -1, 'setSeriesOrder: invalid data source');
+            this._private__dataSources.splice(index, 1);
+            this._private__dataSources.splice(order, 0, series);
+            this._private__dataSources.forEach((ps, i) => ps._internal_setZorder(i));
+            this._private__cachedOrderedSources = null;
+            for (const ps of [this._private__leftPriceScale, this._private__rightPriceScale]) {
+                ps._internal_invalidateSourcesCache();
+                ps._internal_updateFormatter();
+            }
+            this._private__model._internal_lightUpdate();
+        }
         _internal_orderedSeries() {
             return this._internal_orderedSources().filter(isSeries);
         }
@@ -4805,41 +4949,20 @@
             }
             priceScale._internal_updateAllViews();
         }
-        _private__getZOrderMinMax() {
-            const sources = this._internal_orderedSources();
-            if (sources.length === 0) {
-                return { _internal_minZOrder: 0, _internal_maxZOrder: 0 };
-            }
-            let minZOrder = 0;
-            let maxZOrder = 0;
-            for (let j = 0; j < sources.length; j++) {
-                const ds = sources[j];
-                const zOrder = ds._internal_zorder();
-                if (zOrder !== null) {
-                    if (zOrder < minZOrder) {
-                        minZOrder = zOrder;
-                    }
-                    if (zOrder > maxZOrder) {
-                        maxZOrder = zOrder;
-                    }
-                }
-            }
-            return { _internal_minZOrder: minZOrder, _internal_maxZOrder: maxZOrder };
-        }
-        _private__insertDataSource(source, priceScaleId, zOrder) {
+        _private__insertDataSource(source, priceScaleId, order) {
             let priceScale = this._internal_priceScaleById(priceScaleId);
             if (priceScale === null) {
                 priceScale = this._private__createPriceScale(priceScaleId, this._private__model._internal_options().overlayPriceScales);
             }
-            this._private__dataSources.push(source);
+            this._private__dataSources.splice(order, 0, source);
             if (!isDefaultPriceScale(priceScaleId)) {
                 const overlaySources = this._private__overlaySourcesByScaleId.get(priceScaleId) || [];
                 overlaySources.push(source);
                 this._private__overlaySourcesByScaleId.set(priceScaleId, overlaySources);
             }
+            source._internal_setZorder(order);
             priceScale._internal_addDataSource(source);
             source._internal_setPriceScale(priceScale);
-            source._internal_setZorder(zOrder);
             this._internal_recalculatePriceScale(priceScale);
             this._private__cachedOrderedSources = null;
         }
@@ -5859,8 +5982,10 @@
             this._private__timeScale = new TimeScale(this, options.timeScale, this._private__options.localization, horzScaleBehavior);
             this._private__crosshair = new Crosshair(this, options.crosshair);
             this._private__magnet = new Magnet(options.crosshair);
-            this._private__getOrCreatePane(0);
-            this._private__panes[0]._internal_setStretchFactor(DEFAULT_STRETCH_FACTOR * 2);
+            if (options.addDefaultPane) {
+                this._private__getOrCreatePane(0);
+                this._private__panes[0]._internal_setStretchFactor(DEFAULT_STRETCH_FACTOR * 2);
+            }
             this._private__backgroundTopColor = this._private__getBackgroundColor(0 /* BackgroundColorSide.Top */);
             this._private__backgroundBottomColor = this._private__getBackgroundColor(1 /* BackgroundColorSide.Bottom */);
         }
@@ -6029,6 +6154,15 @@
             const secondPane = this._private__panes[second];
             this._private__panes[first] = secondPane;
             this._private__panes[second] = firstPane;
+            this._internal_fullUpdate();
+        }
+        _internal_movePane(from, to) {
+            assert(from >= 0 && from < this._private__panes.length && to >= 0 && to < this._private__panes.length, 'Invalid pane index');
+            if (from === to) {
+                return;
+            }
+            const [paneToMove] = this._private__panes.splice(from, 1);
+            this._private__panes.splice(to, 0, paneToMove);
             this._internal_fullUpdate();
         }
         _internal_startScalePrice(pane, priceScale, x) {
@@ -6249,8 +6383,8 @@
         }
         _internal_moveSeriesToScale(series, targetScaleId) {
             const pane = ensureNotNull(this._internal_paneForSource(series));
-            pane._internal_removeDataSource(series);
-            pane._internal_addDataSource(series, targetScaleId, ensureNotNull(series._internal_zorder()));
+            pane._internal_removeDataSource(series, true);
+            pane._internal_addDataSource(series, targetScaleId, true);
         }
         _internal_fitContent() {
             const mask = InvalidateMask._internal_light();
@@ -6303,6 +6437,7 @@
             if (previousPane._internal_dataSources().length === 0) {
                 this._private__cleanupIfPaneIsEmpty(previousPane);
             }
+            this._internal_fullUpdate();
         }
         _internal_backgroundBottomColor() {
             return this._private__backgroundBottomColor;
@@ -6344,25 +6479,32 @@
         _internal_colorParser() {
             return this._private__colorParser;
         }
+        _internal_addPane() {
+            return this._private__addPane();
+        }
+        _private__addPane(index) {
+            const pane = new Pane(this._private__timeScale, this);
+            this._private__panes.push(pane);
+            const idx = index ?? this._private__panes.length - 1;
+            // we always do autoscaling on the creation
+            // if autoscale option is true, it is ok, just recalculate by invalidation mask
+            // if autoscale option is false, autoscale anyway on the first draw
+            // also there is a scenario when autoscale is true in constructor and false later on applyOptions
+            const mask = InvalidateMask._internal_full();
+            mask._internal_invalidatePane(idx, {
+                _internal_level: 0 /* InvalidationLevel.None */,
+                _internal_autoScale: true,
+            });
+            this._private__invalidate(mask);
+            return pane;
+        }
         _private__getOrCreatePane(index) {
             assert(index >= 0, 'Index should be greater or equal to 0');
             index = Math.min(this._private__panes.length, index);
             if (index < this._private__panes.length) {
                 return this._private__panes[index];
             }
-            const pane = new Pane(this._private__timeScale, this);
-            this._private__panes.push(pane);
-            // we always do autoscaling on the creation
-            // if autoscale option is true, it is ok, just recalculate by invalidation mask
-            // if autoscale option is false, autoscale anyway on the first draw
-            // also there is a scenario when autoscale is true in constructor and false later on applyOptions
-            const mask = InvalidateMask._internal_full();
-            mask._internal_invalidatePane(index, {
-                _internal_level: 0 /* InvalidationLevel.None */,
-                _internal_autoScale: true,
-            });
-            this._private__invalidate(mask);
-            return pane;
+            return this._private__addPane(index);
         }
         _private__seriesPaneIndex(series) {
             return this._private__panes.findIndex((pane) => pane._internal_series().includes(series));
@@ -6408,9 +6550,8 @@
             return layoutOptions.background.color;
         }
         _private__cleanupIfPaneIsEmpty(pane) {
-            if (pane._internal_dataSources().length === 0 && this._private__panes.length > 1) {
+            if (!pane._internal_preserveEmptyPane() && (pane._internal_dataSources().length === 0 && this._private__panes.length > 1)) {
                 this._private__panes.splice(this._internal_getPaneIndex(pane), 1);
-                this._internal_fullUpdate();
             }
         }
     }
@@ -7153,10 +7294,9 @@
         return DevicePixelContentBoxBinding;
     }());
     function bindTo(canvasElement, target) {
-        if (target.type === 'device-pixel-content-box') {
+        {
             return new DevicePixelContentBoxBinding(canvasElement, target.transform, target.options);
         }
-        throw new Error('Unsupported binding target');
     }
     function canvasElementWindow(canvasElement) {
         // According to DOM Level 2 Core specification, ownerDocument should never be null for HTMLCanvasElement
@@ -8309,7 +8449,6 @@
         const canvas = doc.createElement('canvas');
         parentElement.appendChild(canvas);
         const binding = bindTo(canvas, {
-            type: 'device-pixel-content-box',
             options: {
                 allowResizeObserver: true,
             },
@@ -11493,6 +11632,7 @@
             top: 0.2,
         },
         minimumWidth: 0,
+        ensureEdgeTickMarksVisible: false,
     };
 
     const timeScaleOptionsDefaults = {
@@ -11520,6 +11660,7 @@
 
     function chartOptionsDefaults() {
         return {
+            addDefaultPane: true,
             width: 0,
             height: 0,
             autoSize: false,
@@ -11588,6 +11729,20 @@
             }
             return this._private__chartWidget._internal_getPriceAxisWidth(this._private__priceScaleId);
         }
+        setVisibleRange(range) {
+            this.setAutoScale(false);
+            this._private__priceScale()._internal_setCustomPriceRange(new PriceRangeImpl(range.from, range.to));
+        }
+        getVisibleRange() {
+            const range = this._private__priceScale()._internal_priceRange();
+            return range === null ? null : {
+                from: range._internal_minValue(),
+                to: range._internal_maxValue(),
+            };
+        }
+        setAutoScale(on) {
+            this.applyOptions({ autoScale: on });
+        }
         _private__priceScale() {
             return ensureNotNull(this._private__chartWidget._internal_model()._internal_findPriceScale(this._private__priceScaleId, this._private__paneIndex))._internal_priceScale;
         }
@@ -11608,6 +11763,13 @@
             const paneIndex = chartModel._internal_getPaneIndex(this._private__pane);
             chartModel._internal_changePanesHeight(paneIndex, height);
         }
+        getStretchFactor() {
+            return this._private__pane._internal_stretchFactor();
+        }
+        setStretchFactor(stretchFactor) {
+            this._private__pane._internal_setStretchFactor(stretchFactor);
+            this._private__chartWidget._internal_model()._internal_fullUpdate();
+        }
         paneIndex() {
             return this._private__chartWidget._internal_model()._internal_getPaneIndex(this._private__pane);
         }
@@ -11617,13 +11779,17 @@
                 return;
             }
             assert(paneIndex >= 0 && paneIndex < this._private__chartWidget._internal_paneWidgets().length, 'Invalid pane index');
-            this._private__chartWidget._internal_model()._internal_swapPanes(currentIndex, paneIndex);
+            this._private__chartWidget._internal_model()._internal_movePane(currentIndex, paneIndex);
         }
         getSeries() {
             return this._private__pane._internal_series().map((source) => this._private__seriesApiGetter(source)) ?? [];
         }
         getHTMLElement() {
-            return this._private__chartWidget._internal_paneWidgets()[this.paneIndex()]._internal_getElement();
+            const widgets = this._private__chartWidget._internal_paneWidgets();
+            if (!widgets || widgets.length === 0 || !widgets[this.paneIndex()]) {
+                return null;
+            }
+            return widgets[this.paneIndex()]._internal_getElement();
         }
         attachPrimitive(primitive) {
             this._private__pane._internal_attachPrimitive(primitive);
@@ -11643,6 +11809,18 @@
                 throw new Error(`Cannot find price scale with id: ${priceScaleId}`);
             }
             return new PriceScaleApi(this._private__chartWidget, priceScaleId, this.paneIndex());
+        }
+        setPreserveEmptyPane(preserve) {
+            this._private__pane._internal_setPreserveEmptyPane(preserve);
+        }
+        preserveEmptyPane() {
+            return this._private__pane._internal_preserveEmptyPane();
+        }
+        addCustomSeries(customPaneView, options = {}, paneIndex = 0) {
+            return this._internal__chartApi.addCustomSeries(customPaneView, options, paneIndex);
+        }
+        addSeries(definition, options = {}) {
+            return this._internal__chartApi.addSeries(definition, options, this.paneIndex());
         }
     }
 
@@ -11885,6 +12063,20 @@
         }
         moveToPane(paneIndex) {
             this._internal__series._internal_model()._internal_moveSeriesToPane(this._internal__series, paneIndex);
+        }
+        seriesOrder() {
+            const pane = this._internal__series._internal_model()._internal_paneForSource(this._internal__series);
+            if (pane === null) {
+                return -1;
+            }
+            return pane._internal_series().indexOf(this._internal__series);
+        }
+        setSeriesOrder(order) {
+            const pane = this._internal__series._internal_model()._internal_paneForSource(this._internal__series);
+            if (pane === null) {
+                return;
+            }
+            pane._internal_setSeriesOrder(this._internal__series, order);
         }
         _private__onDataChanged(scope) {
             if (this._private__dataChangedDelegate._internal_hasListeners()) {
@@ -12224,6 +12416,11 @@
         }
         takeScreenshot() {
             return this._private__chartWidget._internal_takeScreenshot();
+        }
+        addPane(preserveEmptyPane = false) {
+            const pane = this._private__chartWidget._internal_model()._internal_addPane();
+            pane._internal_setPreserveEmptyPane(preserveEmptyPane);
+            return this._private__getPaneApi(pane);
         }
         removePane(index) {
             this._private__chartWidget._internal_model()._internal_removePane(index);
@@ -13921,7 +14118,7 @@
             ...options,
         };
     }
-    function mergeOptionsWithDefaults$1(options) {
+    function mergeOptionsWithDefaults$2(options) {
         return {
             ...textWatermarkOptionsDefaults,
             ...options,
@@ -13930,7 +14127,7 @@
     }
     class TextWatermark {
         constructor(options) {
-            this._private__options = mergeOptionsWithDefaults$1(options);
+            this._private__options = mergeOptionsWithDefaults$2(options);
             this._private__paneViews = [new TextWatermarkPaneView(this._private__options)];
         }
         updateAllViews() {
@@ -13946,7 +14143,7 @@
             this._internal_requestUpdate = undefined;
         }
         _internal_applyOptions(options) {
-            this._private__options = mergeOptionsWithDefaults$1({ ...this._private__options, ...options });
+            this._private__options = mergeOptionsWithDefaults$2({ ...this._private__options, ...options });
             if (this._internal_requestUpdate) {
                 this._internal_requestUpdate();
             }
@@ -14086,7 +14283,7 @@
         };
     }
 
-    function mergeOptionsWithDefaults(options) {
+    function mergeOptionsWithDefaults$1(options) {
         return {
             ...imageWatermarkOptionsDefaults,
             ...options,
@@ -14096,7 +14293,7 @@
         constructor(imageUrl, options) {
             this._private__imgElement = null;
             this._private__imageUrl = imageUrl;
-            this._private__options = mergeOptionsWithDefaults(options);
+            this._private__options = mergeOptionsWithDefaults$1(options);
             this._private__paneViews = [new ImageWatermarkPaneView(this._private__options)];
         }
         updateAllViews() {
@@ -14128,7 +14325,7 @@
             this._private__imgElement = null;
         }
         _internal_applyOptions(options) {
-            this._private__options = mergeOptionsWithDefaults({ ...this._private__options, ...options });
+            this._private__options = mergeOptionsWithDefaults$1({ ...this._private__options, ...options });
             this._private__updateOptions();
             if (this._internal_requestUpdate) {
                 this._internal_requestUpdate();
@@ -14192,6 +14389,10 @@
             this._internal__series.attachPrimitive(this._internal__primitive);
         }
     }
+
+    const seriesMarkerOptionsDefaults = {
+        zOrder: 'normal',
+    };
 
     function size(barSpacing, coeff) {
         const result = Math.min(Math.max(barSpacing, 12 /* Constants.MinShapeSize */), 30 /* Constants.MaxShapeSize */) * coeff;
@@ -14334,17 +14535,19 @@
             this._private__fontSize = -1;
             this._private__fontFamily = '';
             this._private__font = '';
+            this._private__zOrder = 'normal';
         }
         _internal_setData(data) {
             this._private__data = data;
         }
-        _internal_setParams(fontSize, fontFamily) {
+        _internal_setParams(fontSize, fontFamily, zOrder) {
             if (this._private__fontSize !== fontSize || this._private__fontFamily !== fontFamily) {
                 this._private__fontSize = fontSize;
                 this._private__fontFamily = fontFamily;
                 this._private__font = makeFont(fontSize, fontFamily);
                 this._private__textWidthCache._internal_reset();
             }
+            this._private__zOrder = zOrder;
         }
         _internal_hitTest(x, y) {
             if (this._private__data === null || this._private__data._internal_visibleRange === null) {
@@ -14362,6 +14565,17 @@
             return null;
         }
         draw(target) {
+            if (this._private__zOrder === 'aboveSeries') {
+                return;
+            }
+            target.useBitmapCoordinateSpace((scope) => {
+                this._internal__drawImpl(scope);
+            });
+        }
+        drawBackground(target) {
+            if (this._private__zOrder !== 'aboveSeries') {
+                return;
+            }
             target.useBitmapCoordinateSpace((scope) => {
                 this._internal__drawImpl(scope);
             });
@@ -14441,57 +14655,78 @@
         }
     }
 
-    // eslint-disable-next-line max-params
-    function fillSizeAndY(rendererItem, marker, seriesData, offsets, textHeight, shapeMargin, series, chart) {
-        const timeScale = chart.timeScale();
-        let inBarPrice;
-        let highPrice;
-        let lowPrice;
+    function isPriceMarker(position) {
+        return position === 'atPriceTop' || position === 'atPriceBottom' || position === 'atPriceMiddle';
+    }
+    function getPrice(seriesData, marker) {
+        if (isPriceMarker(marker.position) && marker.price !== undefined) {
+            return marker.price;
+        }
         if (isValueData(seriesData)) {
-            inBarPrice = seriesData.value;
-            highPrice = seriesData.value;
-            lowPrice = seriesData.value;
+            return seriesData.value;
         }
-        else if (isOhlcData(seriesData)) {
-            inBarPrice = seriesData.close;
-            highPrice = seriesData.high;
-            lowPrice = seriesData.low;
+        if (isOhlcData(seriesData)) {
+            if (marker.position === 'inBar') {
+                return seriesData.close;
+            }
+            if (marker.position === 'aboveBar') {
+                return seriesData.high;
+            }
+            if (marker.position === 'belowBar') {
+                return seriesData.low;
+            }
         }
-        else {
+        return;
+    }
+    // eslint-disable-next-line max-params, complexity
+    function fillSizeAndY(rendererItem, marker, seriesData, offsets, textHeight, shapeMargin, series, chart) {
+        const price = getPrice(seriesData, marker);
+        if (price === undefined) {
             return;
         }
+        const ignoreOffset = isPriceMarker(marker.position);
+        const timeScale = chart.timeScale();
         const sizeMultiplier = isNumber(marker.size) ? Math.max(marker.size, 0) : 1;
         const shapeSize = calculateShapeHeight(timeScale.options().barSpacing) * sizeMultiplier;
         const halfSize = shapeSize / 2;
         rendererItem._internal_size = shapeSize;
-        switch (marker.position) {
-            case 'inBar': {
-                rendererItem._internal_y = ensureNotNull(series.priceToCoordinate(inBarPrice));
+        const position = marker.position;
+        switch (position) {
+            case 'inBar':
+            case 'atPriceMiddle': {
+                rendererItem._internal_y = ensureNotNull(series.priceToCoordinate(price));
                 if (rendererItem._internal_text !== undefined) {
                     rendererItem._internal_text._internal_y = rendererItem._internal_y + halfSize + shapeMargin + textHeight * (0.5 + 0.1 /* Constants.TextMargin */);
                 }
                 return;
             }
-            case 'aboveBar': {
-                rendererItem._internal_y = (ensureNotNull(series.priceToCoordinate(highPrice)) - halfSize - offsets._internal_aboveBar);
+            case 'aboveBar':
+            case 'atPriceTop': {
+                const offset = ignoreOffset ? 0 : offsets._internal_aboveBar;
+                rendererItem._internal_y = (ensureNotNull(series.priceToCoordinate(price)) - halfSize - offset);
                 if (rendererItem._internal_text !== undefined) {
                     rendererItem._internal_text._internal_y = rendererItem._internal_y - halfSize - textHeight * (0.5 + 0.1 /* Constants.TextMargin */);
                     offsets._internal_aboveBar += textHeight * (1 + 2 * 0.1 /* Constants.TextMargin */);
                 }
-                offsets._internal_aboveBar += shapeSize + shapeMargin;
+                if (!ignoreOffset) {
+                    offsets._internal_aboveBar += shapeSize + shapeMargin;
+                }
                 return;
             }
-            case 'belowBar': {
-                rendererItem._internal_y = (ensureNotNull(series.priceToCoordinate(lowPrice)) + halfSize + offsets._internal_belowBar);
+            case 'belowBar':
+            case 'atPriceBottom': {
+                const offset = ignoreOffset ? 0 : offsets._internal_belowBar;
+                rendererItem._internal_y = (ensureNotNull(series.priceToCoordinate(price)) + halfSize + offset);
                 if (rendererItem._internal_text !== undefined) {
-                    rendererItem._internal_text._internal_y = rendererItem._internal_y + halfSize + shapeMargin + textHeight * (0.5 + 0.1 /* Constants.TextMargin */);
+                    rendererItem._internal_text._internal_y = (rendererItem._internal_y + halfSize + shapeMargin + textHeight * (0.5 + 0.1 /* Constants.TextMargin */));
                     offsets._internal_belowBar += textHeight * (1 + 2 * 0.1 /* Constants.TextMargin */);
                 }
-                offsets._internal_belowBar += shapeSize + shapeMargin;
+                if (!ignoreOffset) {
+                    offsets._internal_belowBar += shapeSize + shapeMargin;
+                }
                 return;
             }
         }
-        ensureNever(marker.position);
     }
     function isValueData(data) {
         // eslint-disable-next-line no-restricted-syntax
@@ -14502,7 +14737,7 @@
         return 'open' in data && 'high' in data && 'low' in data && 'close' in data;
     }
     class SeriesMarkersPaneView {
-        constructor(series, chart) {
+        constructor(series, chart, options) {
             this._private__markers = [];
             this._private__invalidated = true;
             this._private__dataInvalidated = true;
@@ -14513,6 +14748,7 @@
                 _internal_items: [],
                 _internal_visibleRange: null,
             };
+            this._private__options = options;
         }
         renderer() {
             if (!this._private__series.options().visible) {
@@ -14522,7 +14758,7 @@
                 this._internal__makeValid();
             }
             const layout = this._private__chart.options()['layout'];
-            this._private__renderer._internal_setParams(layout.fontSize, layout.fontFamily);
+            this._private__renderer._internal_setParams(layout.fontSize, layout.fontFamily, this._private__options.zOrder);
             this._private__renderer._internal_setData(this._private__data);
             return this._private__renderer;
         }
@@ -14535,6 +14771,13 @@
             if (updateType === 'data') {
                 this._private__dataInvalidated = true;
             }
+        }
+        _internal_updateOptions(options) {
+            this._private__invalidated = true;
+            this._private__options = options;
+        }
+        zOrder() {
+            return this._private__options.zOrder === 'aboveSeries' ? 'top' : this._private__options.zOrder;
         }
         _internal__makeValid() {
             const timeScale = this._private__chart.timeScale();
@@ -14593,7 +14836,7 @@
                         _internal_height: 0,
                     };
                 }
-                const dataAt = ensureNotNull(this._private__series.dataByIndex(marker.time, -1));
+                const dataAt = this._private__series.dataByIndex(marker.time, 0 /* MismatchDirection.None */);
                 if (dataAt === null) {
                     continue;
                 }
@@ -14603,8 +14846,14 @@
         }
     }
 
+    function mergeOptionsWithDefaults(options) {
+        return {
+            ...seriesMarkerOptionsDefaults,
+            ...options,
+        };
+    }
     class SeriesMarkersPrimitive {
-        constructor() {
+        constructor(options) {
             this._private__paneView = null;
             this._private__markers = [];
             this._private__indexedMarkers = [];
@@ -14615,14 +14864,17 @@
             this._private__autoScaleMargins = null;
             this._private__markersPositions = null;
             this._private__cachedBarSpacing = null;
+            this._private__recalculationRequired = true;
+            this._private__options = mergeOptionsWithDefaults(options);
         }
         attached(param) {
             this._private__recalculateMarkers();
             this._private__chart = param.chart;
             this._private__series = param.series;
-            this._private__paneView = new SeriesMarkersPaneView(this._private__series, ensureNotNull(this._private__chart));
+            this._private__paneView = new SeriesMarkersPaneView(this._private__series, ensureNotNull(this._private__chart), this._private__options);
             this._private__requestUpdate = param.requestUpdate;
             this._private__series.subscribeDataChanged((scope) => this._private__onDataChanged(scope));
+            this._private__recalculationRequired = true;
             this._internal_requestUpdate();
         }
         _internal_requestUpdate() {
@@ -14640,6 +14892,7 @@
             this._private__dataChangedHandler = null;
         }
         _internal_setMarkers(markers) {
+            this._private__recalculationRequired = true;
             this._private__markers = markers;
             this._private__recalculateMarkers();
             this._private__autoScaleMarginsInvalidated = true;
@@ -14673,6 +14926,12 @@
             }
             return null;
         }
+        _internal_applyOptions(options) {
+            this._private__options = mergeOptionsWithDefaults({ ...this._private__options, ...options });
+            if (this._internal_requestUpdate) {
+                this._internal_requestUpdate();
+            }
+        }
         _private__getAutoScaleMargins() {
             const chart = ensureNotNull(this._private__chart);
             const barSpacing = chart.timeScale().options().barSpacing;
@@ -14705,28 +14964,31 @@
                     inBar: false,
                     aboveBar: false,
                     belowBar: false,
+                    atPriceTop: false,
+                    atPriceBottom: false,
+                    atPriceMiddle: false,
                 });
             }
             return this._private__markersPositions;
         }
         _private__recalculateMarkers() {
-            if (!this._private__chart || !this._private__series) {
+            if (!this._private__recalculationRequired || !this._private__chart || !this._private__series) {
                 return;
             }
             const timeScale = this._private__chart.timeScale();
-            if (timeScale.getVisibleLogicalRange() == null || !this._private__series || this._private__series?.data().length === 0) {
+            const seriesData = this._private__series?.data();
+            if (timeScale.getVisibleLogicalRange() == null || !this._private__series || seriesData.length === 0) {
                 this._private__indexedMarkers = [];
                 return;
             }
-            const seriesData = this._private__series?.data();
             const firstDataIndex = timeScale.timeToIndex(ensureNotNull(seriesData[0].time), true);
             this._private__indexedMarkers = this._private__markers.map((marker, index) => {
                 const timePointIndex = timeScale.timeToIndex(marker.time, true);
                 const searchMode = timePointIndex < firstDataIndex ? 1 /* MismatchDirection.NearestRight */ : -1 /* MismatchDirection.NearestLeft */;
                 const seriesDataByIndex = ensureNotNull(this._private__series).dataByIndex(timePointIndex, searchMode);
-                // @TODO think about should we expose the series' `.search()` method
                 const finalIndex = timeScale.timeToIndex(ensureNotNull(seriesDataByIndex).time, false);
-                return {
+                // You must explicitly define the types so that the minification build processes the field names correctly
+                const baseMarker = {
                     time: finalIndex,
                     position: marker.position,
                     shape: marker.shape,
@@ -14735,18 +14997,41 @@
                     _internal_internalId: index,
                     text: marker.text,
                     size: marker.size,
+                    price: marker.price,
                     _internal_originalTime: marker.time,
                 };
+                if (marker.position === 'atPriceTop' ||
+                    marker.position === 'atPriceBottom' ||
+                    marker.position === 'atPriceMiddle') {
+                    if (marker.price === undefined) {
+                        throw new Error(`Price is required for position ${marker.position}`);
+                    }
+                    return {
+                        ...baseMarker,
+                        position: marker.position, // TypeScript knows this is SeriesMarkerPricePosition
+                        price: marker.price,
+                    };
+                }
+                else {
+                    return {
+                        ...baseMarker,
+                        position: marker.position, // TypeScript knows this is SeriesMarkerBarPosition
+                        price: marker.price, // Optional for bar positions
+                    };
+                }
             });
+            this._private__recalculationRequired = false;
         }
         _private__updateAllViews(updateType) {
             if (this._private__paneView) {
                 this._private__recalculateMarkers();
                 this._private__paneView._internal_setMarkers(this._private__indexedMarkers);
+                this._private__paneView._internal_updateOptions(this._private__options);
                 this._private__paneView._internal_update(updateType);
             }
         }
         _private__onDataChanged(scope) {
+            this._private__recalculationRequired = true;
             this._internal_requestUpdate();
         }
     }
@@ -14772,6 +15057,8 @@
      *
      * @param markers - An array of markers to be displayed on the series.
      *
+     * @param options - Options for the series markers plugin.
+     *
      * @example
      * ```js
      * import { createSeriesMarkers } from 'lightweight-charts';
@@ -14794,8 +15081,8 @@
      *  // `seriesMarkers.markers()` returns current markers
      * ```
      */
-    function createSeriesMarkers(series, markers) {
-        const wrapper = new SeriesMarkersPrimitiveWrapper(series, new SeriesMarkersPrimitive());
+    function createSeriesMarkers(series, markers, options) {
+        const wrapper = new SeriesMarkersPrimitiveWrapper(series, new SeriesMarkersPrimitive(options ?? {}));
         if (markers) {
             wrapper.setMarkers(markers);
         }
@@ -15139,7 +15426,7 @@
      * Returns the current version as a string. For example `'3.3.0'`.
      */
     function version() {
-        return "5.0.3";
+        return "5.0.8";
     }
 
     var LightweightChartsModule = /*#__PURE__*/Object.freeze({
