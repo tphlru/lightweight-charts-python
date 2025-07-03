@@ -1,12 +1,12 @@
 import pandas as pd
 from lightweight_charts import Chart
-
+import os
 
 if __name__ == '__main__':
 
     chart = Chart()
 
-    df = pd.read_csv('ohlcv.csv')
+    df = pd.read_csv(os.path.join(os.path.dirname(__file__), 'ohlcv.csv'))
 
     chart.layout(background_color='#090008', text_color='#FFFFFF', font_size=16, font_family='Helvetica')
 

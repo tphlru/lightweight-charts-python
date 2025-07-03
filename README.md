@@ -32,6 +32,17 @@ __Supports:__ Jupyter Notebooks, PyQt6, PyQt5, PySide6, wxPython, Streamlit, and
 PartTimeLarry: [Interactive Brokers API and TradingView Charts in Python](https://www.youtube.com/watch?v=TlhDI3PforA)
 ___
 
+```
+python -m examples.1_setting_data.setting_data
+python -m examples.2_live_data.live_data
+python -m examples.3_tick_data.tick_data
+python -m examples.4_line_indicators.line_indicators
+python -m examples.5_styling.styling
+python -m examples.6_callbacks.callbacks
+python -m examples.9_01_subcharts.subcharts
+```
+
+
 ### 1. Display data from a csv:
 
 ```python

@@ -1,6 +1,6 @@
 import pandas as pd
 from lightweight_charts import Chart
-
+import os
 
 def calculate_sma(df, period: int = 50):
     return pd.DataFrame(
@@ -24,15 +24,15 @@ def calculate_macd(df, short_period=12, long_period=26, signal_period=9):
     ).dropna()
 
 if __name__ == "__main__":
-    chart = Chart(inner_height=0.7)
+    chart = Chart(inner_height=0.7, debug=True)
     chart.legend(visible=True)
 
-    chart2 = chart.create_subchart(position="left", width=1, height=0.3)
+    chart2 = chart.create_subchart(position="left", width=1, height=0.3, sync=True)
 
     chart.watermark("Main")
     chart2.watermark("Sub")
 
-    df = pd.read_csv("ohlcv.csv")
+    df = pd.read_csv(os.path.join(os.path.dirname(__file__), "ohlcv.csv"))
     chart.set(df)
 
     line = chart.create_line("SMA 50")

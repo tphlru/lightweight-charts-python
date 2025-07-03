@@ -1,6 +1,6 @@
 import pandas as pd
 from lightweight_charts import Chart
-
+import os
 
 def calculate_sma(df, period: int = 50):
     return pd.DataFrame({
@@ -13,7 +13,7 @@ if __name__ == '__main__':
     chart = Chart()
     chart.legend(visible=True)
 
-    df = pd.read_csv('ohlcv.csv')
+    df = pd.read_csv(os.path.join(os.path.dirname(__file__), 'ohlcv.csv'))
     chart.set(df)
 
     line = chart.create_line('SMA 50')

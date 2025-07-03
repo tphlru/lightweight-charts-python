@@ -1,12 +1,12 @@
 import pandas as pd
 from lightweight_charts import Chart
-
+import os
 
 def get_bar_data(symbol, timeframe):
     if symbol not in ('AAPL', 'GOOGL', 'TSLA'):
         print(f'No data for "{symbol}"')
         return pd.DataFrame()
-    return pd.read_csv(f'bar_data/{symbol}_{timeframe}.csv')
+    return pd.read_csv(os.path.join(os.path.dirname(__file__), f'bar_data/{symbol}_{timeframe}.csv'))
 
 
 def on_search(chart, searched_string):  # Called when the user searches.
