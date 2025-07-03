@@ -566,7 +566,7 @@ class Line(SeriesCommon):
             {self._chart.id}.legend._lines = {self._chart.id}.legend._lines.filter((item) => item != {self.id}legendItem)
 
             if ({self.id}legendItem) {{
-                {self._chart.id}.legend.div.removeChild({self.id}legendItem.row)
+                {self.id}legendItem.row.remove();
             }}
 
             {self._chart.id}.chart.removeSeries({self.id}.series)
@@ -1214,5 +1214,7 @@ class AbstractChart(Candlestick, Pane):
         """
         Adds a new pane to the chart. Returns None.
         """
-        self.run_script(f"{self.id}.chart.model()._private__getOrCreatePane({self.id}.chart.model()._internal_panes().length)")
+        self.run_script(
+            f"{self.id}.chart.model()._private__getOrCreatePane({self.id}.chart.model()._internal_panes().length)"
+        )
         return None
