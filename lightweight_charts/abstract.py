@@ -256,11 +256,18 @@ class SeriesCommon(Pane):
         arg = self._interval * (arg.timestamp() // self._interval) + self.offset
         return arg
 
-    def set(self, df: Optional[pd.DataFrame] = None, format_cols: bool = True):
+    def set(self, df: Optional[pd.DataFrame] = None, format_cols: bool = True, align_to: Optional[pd.Series] = None):
         if df is None or df.empty:
             self.run_script(f"{self.id}.series.setData([])")
             self.data = pd.DataFrame()
             return
+        if align_to is not None:
+            # align_to can be a Series (for example, df['date']) or a DataFrame with a 'time' column
+            if isinstance(align_to, pd.DataFrame):
+                align_index = align_to['time'] if 'time' in align_to else align_to.iloc[:, 0]
+            else:
+                align_index = align_to
+            df = df.set_index('time').reindex(align_index).reset_index()
         if format_cols:
             df = self._df_datetime_format(df, exclude_lowercase=self.name)
         if self.name:
