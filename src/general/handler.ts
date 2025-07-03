@@ -99,6 +99,9 @@ export class Handler {
     this.reSize();
     if (!autoSize) return;
     window.addEventListener("resize", () => this.reSize());
+    // DEBUG: экспорт Handler в window для отладки
+    // @ts-ignore
+    window.mainHandler = this;
   }
 
   reSize() {

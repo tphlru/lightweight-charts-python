@@ -27,6 +27,7 @@ export abstract class PluginBase implements ISeriesPrimitive<Time> {
 		series,
 		requestUpdate,
 	}: SeriesAttachedParameter<Time>) {
+		console.log('[PluginBase] attached', this.constructor.name, {chart, series, requestUpdate});
 		this._chart = chart;
 		this._series = series;
 		this._series.subscribeDataChanged(this._fireDataUpdated);

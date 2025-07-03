@@ -506,6 +506,77 @@ class SeriesCommon(Pane):
         end_time = pd.to_datetime(end_time)
         return VerticalSpan(self._chart, start_time, end_time, color, width, style, func)
 
+    def volume_profile(
+        self,
+        show: bool = True,
+        bins: int = 40,
+        color: str = 'rgba(231,156,250,0.1)',
+        width_percentage: int = 10,
+        text_color: str = 'white',
+        adaptive_vertical_bounds: bool = False,
+        volume_label_position: str = 'right',
+        volume_label_format: str = 'value',
+        volume_label_visible: bool = True,
+        min_bar_width_for_inside_label: int = 32,
+        volume_profile_range_mode: str = 'visible',
+        volume_profile_last_n: int = 100,
+        func=None,
+    ):
+        """
+        Shows or hides the volume profile overlay with customizable parameters.
+
+        :param show: Show or hide the overlay
+        :param bins: Number of price bins
+        :param color: Bar color (rgba or hex)
+        :param width_percentage: Max width as percent of pane
+        :param text_color: Text color for volume values
+        :param adaptive_vertical_bounds: If True, profile is drawn only between min(low) and max(high) of visible candles
+        :param volume_label_position: 'right' (default) or 'inside' (inside bar)
+        :param volume_label_format: 'value' (default) or 'percent'
+        :param volume_label_visible: Show volume labels (default True)
+        :param min_bar_width_for_inside_label: Minimal bar width (px) to show label inside (default 32)
+        :param volume_profile_range_mode: 'visible' (default), 'last_n_visible', or 'last_n_total'
+        :param volume_profile_last_n: N for 'last_n_visible' or 'last_n_total' mode
+        """
+        self.run_script(f"""
+        if ({str(show).lower()}) {{
+            if (!{self.id}.volumeProfile) {{
+                {self.id}.volumeProfile = new Lib.VolumeProfile({{
+                    bins: {bins},
+                    color: '{color}',
+                    widthPercentage: {width_percentage},
+                    textColor: '{text_color}',
+                    adaptiveVerticalBounds: {str(adaptive_vertical_bounds).lower()},
+                    volumeLabelPosition: '{volume_label_position}',
+                    volumeLabelFormat: '{volume_label_format}',
+                    volumeLabelVisible: {str(volume_label_visible).lower()},
+                    minBarWidthForInsideLabel: {min_bar_width_for_inside_label},
+                    rangeMode: '{volume_profile_range_mode}',
+                    lastN: {volume_profile_last_n}
+                }});
+                {self.id}.series.attachPrimitive({self.id}.volumeProfile);
+            }} else {{
+                {self.id}.volumeProfile.applyOptions({{
+                    bins: {bins},
+                    color: '{color}',
+                    widthPercentage: {width_percentage},
+                    textColor: '{text_color}',
+                    adaptiveVerticalBounds: {str(adaptive_vertical_bounds).lower()},
+                    volumeLabelPosition: '{volume_label_position}',
+                    volumeLabelFormat: '{volume_label_format}',
+                    volumeLabelVisible: {str(volume_label_visible).lower()},
+                    minBarWidthForInsideLabel: {min_bar_width_for_inside_label},
+                    rangeMode: '{volume_profile_range_mode}',
+                    lastN: {volume_profile_last_n}
+                }});
+            }}
+            {self.id}.volumeProfile._options.enabled = true;
+        }} else if ({self.id}.volumeProfile) {{
+            {self.id}.volumeProfile._options.enabled = false;
+            {self.id}.series.detachPrimitive({self.id}.volumeProfile);
+        }}
+        """)
+
 
 class Line(SeriesCommon):
     def __init__(
