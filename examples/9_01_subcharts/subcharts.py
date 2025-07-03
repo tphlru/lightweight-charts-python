@@ -24,7 +24,7 @@ def calculate_macd(df, short_period=12, long_period=26, signal_period=9):
     ).dropna()
 
 if __name__ == "__main__":
-    chart = Chart(inner_height=0.7, debug=True)
+    chart = Chart(inner_height=0.7)
     chart.legend(visible=True)
 
     chart2 = chart.create_subchart(position="left", width=1, height=0.3, sync=True)
@@ -46,7 +46,7 @@ if __name__ == "__main__":
     histogram = chart2.create_histogram("MACD")
     histogram.set(macd_data[["time", "MACD", "Signal", "Histogram"]])
 
-    # line2 = chart2.create_line("SMA 50")
-    # line2.set(sma_data)
+    line2 = chart2.create_line("SMA 50")
+    line2.set(sma_data)
 
     chart.show(block=True)

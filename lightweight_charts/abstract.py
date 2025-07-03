@@ -601,7 +601,8 @@ class Histogram(SeriesCommon):
         self.color = color
         self.run_script(
             f"""
-        {self.id} = {chart.id}.chart.addSeries(window.LightweightCharts.HistogramSeries,
+            {self.id} = {chart.id}.createHistogramSeries(
+            "{name}",
             {{
                 color: '{color}',
                 lastValueVisible: {jbool(price_label)},
