@@ -1,4 +1,3 @@
-import asyncio
 import json
 import os
 from base64 import b64decode
@@ -74,10 +73,10 @@ class Window:
             while not self.run_script_and_get('document.readyState == "complete"'):
                 continue  # scary, but works
 
-        initial_script = ""
         self.scripts.extend(self.final_scripts)
-        for script in self.scripts:
-            initial_script += f"\n{script}"
+        if self.script_func is None:
+            raise AttributeError("script_func has not been set")
+        initial_script = "".join(f"\n{script}" for script in self.scripts)
         self.script_func(initial_script)
 
     def run_script(self, script: str, run_last: bool = False):
@@ -98,8 +97,11 @@ class Window:
             self.scripts.append(script)
 
     def run_script_and_get(self, script: str):
+        if not hasattr(self, "_return_q"):
+            raise AttributeError("Window instance has no attribute '_return_q'")
         self.run_script(f"_~_~RETURN~_~_{script}")
-        return self._return_q.get()
+        # Use getattr to avoid static analysis error if attribute is not declared
+        return getattr(self, "_return_q").get()
 
     def create_table(
         self,
@@ -162,20 +164,19 @@ class Window:
 
 
 class SeriesCommon(Pane):
-    def __init__(self, chart: "AbstractChart", name: str = "", pane_index: int = None):
+    def __init__(
+        self, chart: "AbstractChart", name: str = "", pane_index: Optional[int] = None
+    ):
         super().__init__(chart.win)
         self._chart = chart
-        if hasattr(chart, "_interval"):
-            self._interval = chart._interval
-        else:
-            self._interval = 1
+        self._interval = chart._interval if hasattr(chart, "_interval") else 1
         self._last_bar = None
         self.name = name
         self.num_decimals = 2
         self.offset = 0
         self.data = pd.DataFrame()
         self.markers = {}
-        self.pane_index = pane_index
+        self.pane_index = pane_index if pane_index is not None else 0
 
     def _set_interval(self, df: pd.DataFrame):
         if not pd.api.types.is_datetime64_any_dtype(df["time"]):
@@ -183,16 +184,22 @@ class SeriesCommon(Pane):
         common_interval = df["time"].diff().value_counts()
         if common_interval.empty:
             return
-        self._interval = common_interval.index[0].total_seconds()
+        # Ensure common_interval.index[0] is a scalar, not a tuple
+        interval_index = common_interval.index[0]
+        if isinstance(interval_index, tuple):
+            interval_index = interval_index[0]
+        self._interval = pd.Timedelta(interval_index).total_seconds()
+
+        def get_first_index_value(series):
+            idx = series.value_counts().index[0]
+            return idx[0] if isinstance(idx, tuple) else idx
 
         units = [
-            pd.Timedelta(
-                microseconds=df["time"].dt.microsecond.value_counts().index[0]
-            ),
-            pd.Timedelta(seconds=df["time"].dt.second.value_counts().index[0]),
-            pd.Timedelta(minutes=df["time"].dt.minute.value_counts().index[0]),
-            pd.Timedelta(hours=df["time"].dt.hour.value_counts().index[0]),
-            pd.Timedelta(days=df["time"].dt.day.value_counts().index[0]),
+            pd.Timedelta(microseconds=get_first_index_value(df["time"].dt.microsecond)),
+            pd.Timedelta(seconds=get_first_index_value(df["time"].dt.second)),
+            pd.Timedelta(minutes=get_first_index_value(df["time"].dt.minute)),
+            pd.Timedelta(hours=get_first_index_value(df["time"].dt.hour)),
+            pd.Timedelta(days=get_first_index_value(df["time"].dt.day)),
         ]
         self.offset = 0
         for value in units:
@@ -231,9 +238,10 @@ class SeriesCommon(Pane):
 
     def _series_datetime_format(self, series: pd.Series, exclude_lowercase=None):
         series = series.copy()
-        series.index = self._format_labels(
+        new_index = self._format_labels(
             series, series.index, series.name, exclude_lowercase
         )
+        series.index = pd.Index(new_index)
         series["time"] = self._single_datetime_format(series["time"])
         return series
 
@@ -324,13 +332,14 @@ class SeriesCommon(Pane):
         :return: The id of the marker placed.
         """
         try:
-            formatted_time = (
-                self._last_bar["time"]
-                if not time
-                else self._single_datetime_format(time)
+            assert self._last_bar is not None, (
+                "Chart marker created before data was set."
             )
-        except TypeError:
-            raise TypeError("Chart marker created before data was set.")
+            formatted_time = (
+                self._single_datetime_format(time) if time else self._last_bar["time"]
+            )
+        except TypeError as e:
+            raise TypeError("Chart marker created before data was set.") from e
         marker_id = self.win._id_gen.generate()
 
         self.markers[marker_id] = {
@@ -494,9 +503,8 @@ class Line(SeriesCommon):
         price_label,
         price_scale_id=None,
         crosshair_marker=True,
-        pane_index: int = None,
+        pane_index: Optional[int] = None,
     ):
-
         super().__init__(chart, name, pane_index)
         self.color = color
 
@@ -511,17 +519,23 @@ class Line(SeriesCommon):
                     lastValueVisible: {jbool(price_label)},
                     priceLineVisible: {jbool(price_line)},
                     crosshairMarkerVisible: {jbool(crosshair_marker)},
-                    priceScaleId: {f'"{price_scale_id}"' if price_scale_id else 'undefined'},
-                    {"""autoscaleInfoProvider: () => ({
+                    priceScaleId: {
+                f'"{price_scale_id}"' if price_scale_id else "undefined"
+            },
+                    {
+                """autoscaleInfoProvider: () => ({
                             priceRange: {
                                 minValue: 1_000_000_000,
                                 maxValue: 0,
                             },
                         }),
-                    """ if chart._scale_candles_only else ''}
+                    """
+                if chart._scale_candles_only
+                else ""
+            }
                     
                 }},
-                {f'{pane_index},' if pane_index is not None else '0'}
+                {f"{pane_index}," if pane_index is not None else "0"}
             )
         null'''
         )
@@ -572,7 +586,7 @@ class Histogram(SeriesCommon):
         price_label,
         scale_margin_top,
         scale_margin_bottom,
-        pane_index: int = None,
+        pane_index: Optional[int] = None,
     ):
         super().__init__(chart, name, pane_index)
         self.color = color
@@ -587,7 +601,7 @@ class Histogram(SeriesCommon):
                 priceScaleId: '{self.id}',
                 priceFormat: {{type: "volume"}},
             }},
-            {f'{pane_index}' if pane_index is not None else '0'}
+            {f"{pane_index}" if pane_index is not None else "0"}
         )
         {self.id}.series.priceScale().applyOptions({{
             scaleMargins: {{top:{scale_margin_top}, bottom: {scale_margin_bottom}}}
@@ -629,6 +643,7 @@ class Candlestick(SeriesCommon):
         self._volume_down_color = "rgba(200,127,130,0.8)"
 
         self.candle_data = pd.DataFrame()
+        self._lines = []
 
         # self.run_script(f'{self.id}.makeCandlestickSeries()')
 
@@ -682,7 +697,7 @@ class Candlestick(SeriesCommon):
         if series['time'] is the same time as the last bar, the last bar will be overwritten.\n
         :param series: labels: date/time, open, high, low, close, volume (if using volume).
         """
-        series = self._series_datetime_format(series) if not _from_tick else series
+        series = series if _from_tick else self._series_datetime_format(series)
         if series["time"] != self._last_bar["time"]:
             self.candle_data.loc[self.candle_data.index[-1]] = self._last_bar
             self.candle_data = pd.concat(
@@ -759,8 +774,8 @@ class Candlestick(SeriesCommon):
                 alignLabels: {jbool(align_labels)},
                 scaleMargins: {{top: {scale_margin_top}, bottom: {scale_margin_bottom}}},
                 borderVisible: {jbool(border_visible)},
-                {f'borderColor: "{border_color}",' if border_color else ''}
-                {f'textColor: "{text_color}",' if text_color else ''}
+                {f'borderColor: "{border_color}",' if border_color else ""}
+                {f'textColor: "{text_color}",' if text_color else ""}
                 entireTextOnly: {jbool(entire_text_only)},
                 visible: {jbool(visible)},
                 ticksVisible: {jbool(ticks_visible)},
@@ -783,10 +798,10 @@ class Candlestick(SeriesCommon):
         Candle styling for each of its parts.\n
         If only `up_color` and `down_color` are passed, they will color all parts of the candle.
         """
-        border_up_color = border_up_color if border_up_color else up_color
-        border_down_color = border_down_color if border_down_color else down_color
-        wick_up_color = wick_up_color if wick_up_color else up_color
-        wick_down_color = wick_down_color if wick_down_color else down_color
+        border_up_color = border_up_color or up_color
+        border_down_color = border_down_color or down_color
+        wick_up_color = wick_up_color or up_color
+        wick_down_color = wick_down_color or down_color
         self.run_script(f"{self.id}.series.applyOptions({js_json(locals())})")
 
     def volume_config(
@@ -801,8 +816,8 @@ class Candlestick(SeriesCommon):
         Numbers for scaling must be greater than 0 and less than 1.\n
         Volume colors must be applied prior to setting/updating the bars.\n
         """
-        self._volume_up_color = up_color if up_color else self._volume_up_color
-        self._volume_down_color = down_color if down_color else self._volume_down_color
+        self._volume_up_color = up_color or self._volume_up_color
+        self._volume_down_color = down_color or self._volume_down_color
         self.run_script(
             f"""
         {self.id}.volumeSeries.priceScale().applyOptions({{
@@ -862,7 +877,7 @@ class AbstractChart(Candlestick, Pane):
         price_line: bool = True,
         price_label: bool = True,
         price_scale_id: Optional[str] = None,
-        pane_index: int = None,
+        pane_index: Optional[int] = None,
     ) -> Line:
         """
         Creates and returns a Line object.
@@ -877,7 +892,7 @@ class AbstractChart(Candlestick, Pane):
                 price_line,
                 price_label,
                 price_scale_id,
-                pane_index=pane_index,
+                pane_index=pane_index if pane_index is not None else 0,
             )
         )
         return self._lines[-1]
@@ -923,10 +938,12 @@ class AbstractChart(Candlestick, Pane):
         )
 
     def get_visible_range(self) -> Dict[str, datetime]:
-        _visible_range = self.win.run_script_and_get(f'{self.id}.chart.timeScale().getVisibleRange()')
+        _visible_range = self.win.run_script_and_get(
+            f"{self.id}.chart.timeScale().getVisibleRange()"
+        )
         return {
             "from": datetime.fromtimestamp(_visible_range["from"]),
-            "to":   datetime.fromtimestamp(_visible_range["to"]),
+            "to": datetime.fromtimestamp(_visible_range["to"]),
         }
 
     def resize(self, width: Optional[float] = None, height: Optional[float] = None):
@@ -977,9 +994,9 @@ class AbstractChart(Candlestick, Pane):
             {self.id}.chart.applyOptions({{
             layout: {{
                 background: {{color: "{background_color}"}},
-                {f'textColor: "{text_color}",' if text_color else ''}
-                {f'fontSize: {font_size},' if font_size else ''}
-                {f'fontFamily: "{font_family}",' if font_family else ''}
+                {f'textColor: "{text_color}",' if text_color else ""}
+                {f"fontSize: {font_size}," if font_size else ""}
+                {f'fontFamily: "{font_family}",' if font_family else ""}
             }}}})"""
         )
 
@@ -1036,14 +1053,14 @@ class AbstractChart(Candlestick, Pane):
                 vertLine: {{
                     visible: {jbool(vert_visible)},
                     width: {vert_width},
-                    {f'color: "{vert_color}",' if vert_color else ''}
+                    {f'color: "{vert_color}",' if vert_color else ""}
                     style: {as_enum(vert_style, LINE_STYLE)},
                     labelBackgroundColor: "{vert_label_background_color}"
                 }},
                 horzLine: {{
                     visible: {jbool(horz_visible)},
                     width: {horz_width},
-                    {f'color: "{horz_color}",' if horz_color else ''}
+                    {f'color: "{horz_color}",' if horz_color else ""}
                     style: {as_enum(horz_style, LINE_STYLE)},
                     labelBackgroundColor: "{horz_label_background_color}"
                 }}

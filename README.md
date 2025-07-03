@@ -33,6 +33,7 @@ PartTimeLarry: [Interactive Brokers API and TradingView Charts in Python](https:
 ___
 
 ```
+export QT_QPA_PLATFORM=xcb
 python -m examples.1_setting_data.setting_data
 python -m examples.2_live_data.live_data
 python -m examples.3_tick_data.tick_data
