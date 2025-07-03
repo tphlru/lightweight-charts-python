@@ -5,6 +5,7 @@ from random import choices
 from typing import Literal, Union
 from numpy import isin
 import pandas as pd
+import numpy as np
 
 
 class Pane:
@@ -41,6 +42,13 @@ def parse_event_message(window, string):
 
 
 def js_data(data: Union[pd.DataFrame, pd.Series]):
+    def default(obj):
+        if isinstance(obj, (datetime, pd.Timestamp, np.datetime64)):
+            # np.datetime64 to pandas.Timestamp for timestamp()
+            if isinstance(obj, np.datetime64):
+                obj = pd.Timestamp(obj)
+            return int(obj.timestamp())
+        return str(obj)
     if isinstance(data, pd.DataFrame):
         d = data.to_dict(orient="records")
         filtered_records = [
@@ -50,7 +58,7 @@ def js_data(data: Union[pd.DataFrame, pd.Series]):
     else:
         d = data.to_dict()
         filtered_records = {k: v for k, v in d.items()}
-    return json.dumps(filtered_records, indent=2)
+    return json.dumps(filtered_records, indent=2, default=default)
 
 
 def snake_to_camel(s: str):
