@@ -32,9 +32,11 @@ class IDGen(list):
 
 
 def parse_event_message(window, string):
-    name, args = string.split("_~_")
+    name, args = string.split("_~_", 1)
     args = args.split(";;;")
-    func = window.handlers[name]
+    func = window.handlers.get(name)
+    if func is None:
+        return (lambda *a, **kw: None), args
     return func, args
 
 

@@ -1,9 +1,11 @@
 import json
 import os
+from typing import Callable, Literal, Optional
 
 
 class ToolBox:
     def __init__(self, chart):
+        self.chart = chart
         self.run_script = chart.run_script
         self.id = chart.id
         self._save_under = None
@@ -48,3 +50,37 @@ class ToolBox:
         if not self._save_under:
             return
         self.drawings[self._save_under.value] = json.loads(drawings)
+
+    def measure(self, func: Optional[Callable[["ToolBox", str, list], None]] = None) -> None:
+        """
+        Registers a callback for measure tool events (created, updated, deleted).
+        :param func: Callable with signature (toolbox, event_type, points)
+        """
+        if not func:
+            return
+        handler_id = f"measure_{id(func)}"
+        def wrapper(event):
+            if not isinstance(event, str):
+                return
+            try:
+                event_type, points_json = event.split('_~_', 1)
+                import json
+                points = json.loads(points_json)
+            except Exception:
+                event_type = event
+                points = None
+            func(self, event_type, points)
+        self.run_script(f"window.measureCallbackName = '{handler_id}'")
+        self.run_script(
+            f"window.handlers = window.handlers || {{}}; "
+            f"window.handlers['{handler_id}'] = (event) => window.pywebview.api.handle_event('{handler_id}', event);"
+        )
+        self.chart.win.handlers[handler_id] = wrapper
+
+    def set_measure_length_display(self, mode: Literal['time', 'bars', 'both']) -> None:
+        """
+        Set how the measure tool displays length: 'time', 'bars', or 'both'.
+        :param mode: One of 'time', 'bars', or 'both'.
+        """
+        assert mode in ('time', 'bars', 'both'), "mode must be 'time', 'bars', or 'both'"
+        self.run_script(f"window.measureLengthDisplay = '{mode}'")

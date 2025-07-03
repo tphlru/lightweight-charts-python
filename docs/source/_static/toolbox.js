@@ -204,7 +204,7 @@ if (!window.ToolBox) {
             this.clickHandler = (param) => {
                 if (!this.makingDrawing) {
                     this.makingDrawing = true
-                    trendLine.line = this.chart.chart.addLineSeries({
+                    trendLine.line = this.chart.chart.addSeries(window.LightweightCharts.LineSeries, {
                         color: 'rgb(15, 139, 237)',
                         lineWidth: 2,
                         lastValueVisible: false,
@@ -528,7 +528,7 @@ if (!window.ToolBox) {
                     this.drawings[idx] = new HorizontalLine(this.chart, 'toolBox', item.priceLine.price, item.priceLine.color, 2, item.priceLine.lineStyle, item.priceLine.axisLabelVisible)
                 }
                 else {
-                    this.drawings[idx].line = this.chart.chart.addLineSeries({
+                    this.drawings[idx].line = this.chart.chart.addSeries(window.LightweightCharts.LineSeries, {
                         lineWidth: 2,
                         color: this.drawings[idx].color,
                         lastValueVisible: false,

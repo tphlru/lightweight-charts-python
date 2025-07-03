@@ -75,11 +75,11 @@ if (!window.Chart) {
             this.precision = 2
             let up = 'rgba(39, 157, 130, 100)'
             let down = 'rgba(200, 97, 100, 100)'
-            this.series = this.chart.addCandlestickSeries({
+            this.series = this.chart.addSeries(window.LightweightCharts.CandlestickSeries, {
                 color: 'rgb(0, 120, 255)', upColor: up, borderUpColor: up, wickUpColor: up,
                 downColor: down, borderDownColor: down, wickDownColor: down, lineWidth: 2,
             })
-            this.volumeSeries = this.chart.addHistogramSeries({
+            this.volumeSeries = this.chart.addSeries(window.LightweightCharts.HistogramSeries, {
                 color: '#26a69a',
                 priceFormat: {type: 'volume'},
                 priceScaleId: '',

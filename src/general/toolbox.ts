@@ -9,6 +9,8 @@ import { HorizontalLine } from "../horizontal-line/horizontal-line";
 import { RayLine } from "../horizontal-line/ray-line";
 import { VerticalLine } from "../vertical-line/vertical-line";
 import { VerticalSpan } from "../vertical-span/vertical-span";
+import { Measure, MeasureOptions } from "../measure/measure";
+import { Point } from "../drawing/data-source";
 
 
 interface Icon {
@@ -19,12 +21,22 @@ interface Icon {
 
 declare const window: GlobalParams
 
+// Helper class for Measure with callback
+class MeasureWithCallback extends Measure {
+    constructor(p1: Point, p2: Point, options?: Partial<MeasureOptions>) {
+        // Use window.measureCallbackName if set, else random
+        const callbackName = (window as any).measureCallbackName || `measure_${Math.random().toString(36).substr(2, 9)}`;
+        super(p1, p2, options, callbackName);
+    }
+}
+
 export class ToolBox {
     private static readonly TREND_SVG: string = '<rect x="3.84" y="13.67" transform="matrix(0.7071 -0.7071 0.7071 0.7071 -5.9847 14.4482)" width="21.21" height="1.56"/><path d="M23,3.17L20.17,6L23,8.83L25.83,6L23,3.17z M23,7.41L21.59,6L23,4.59L24.41,6L23,7.41z"/><path d="M6,20.17L3.17,23L6,25.83L8.83,23L6,20.17z M6,24.41L4.59,23L6,21.59L7.41,23L6,24.41z"/>';
     private static readonly HORZ_SVG: string = '<rect x="4" y="14" width="9" height="1"/><rect x="16" y="14" width="9" height="1"/><path d="M11.67,14.5l2.83,2.83l2.83-2.83l-2.83-2.83L11.67,14.5z M15.91,14.5l-1.41,1.41l-1.41-1.41l1.41-1.41L15.91,14.5z"/>';
     private static readonly RAY_SVG: string = '<rect x="8" y="14" width="17" height="1"/><path d="M3.67,14.5l2.83,2.83l2.83-2.83L6.5,11.67L3.67,14.5z M7.91,14.5L6.5,15.91L5.09,14.5l1.41-1.41L7.91,14.5z"/>';
     private static readonly BOX_SVG: string = '<rect x="8" y="6" width="12" height="1"/><rect x="9" y="22" width="11" height="1"/><path d="M3.67,6.5L6.5,9.33L9.33,6.5L6.5,3.67L3.67,6.5z M7.91,6.5L6.5,7.91L5.09,6.5L6.5,5.09L7.91,6.5z"/><path d="M19.67,6.5l2.83,2.83l2.83-2.83L22.5,3.67L19.67,6.5z M23.91,6.5L22.5,7.91L21.09,6.5l1.41-1.41L23.91,6.5z"/><path d="M19.67,22.5l2.83,2.83l2.83-2.83l-2.83-2.83L19.67,22.5z M23.91,22.5l-1.41,1.41l-1.41-1.41l1.41-1.41L23.91,22.5z"/><path d="M3.67,22.5l2.83,2.83l2.83-2.83L6.5,19.67L3.67,22.5z M7.91,22.5L6.5,23.91L5.09,22.5l1.41-1.41L7.91,22.5z"/><rect x="22" y="9" width="1" height="11"/><rect x="6" y="9" width="1" height="11"/>';
     private static readonly VERT_SVG: string = ToolBox.RAY_SVG;
+    private static readonly MEASURE_SVG: string = '<path fill="#fff" d="M2 9.75a1.5 1.5 0 0 0-1.5 1.5v5.5a1.5 1.5 0 0 0 1.5 1.5h24a1.5 1.5 0 0 0 1.5-1.5v-5.5a1.5 1.5 0 0 0-1.5-1.5zm0 1h3v2.5h1v-2.5h3.25v3.9h1v-3.9h3.25v2.5h1v-2.5h3.25v3.9h1v-3.9H22v2.5h1v-2.5h3a.5.5 0 0 1 .5.5v5.5a.5.5 0 0 1-.5.5H2a.5.5 0 0 1-.5-.5v-5.5a.5.5 0 0 1 .5-.5z" transform="rotate(-45 14 14)"></path>';
 
     div: HTMLDivElement;
     private activeIcon: Icon | null = null;
@@ -67,6 +79,7 @@ export class ToolBox {
         this.buttons.push(this._makeToolBoxElement(RayLine, 'KeyR', ToolBox.RAY_SVG));
         this.buttons.push(this._makeToolBoxElement(Box, 'KeyB', ToolBox.BOX_SVG));
         this.buttons.push(this._makeToolBoxElement(VerticalLine, 'KeyV', ToolBox.VERT_SVG, true));
+        this.buttons.push(this._makeToolBoxElement(MeasureWithCallback as unknown as new (...args: any[]) => Drawing, 'KeyM', ToolBox.MEASURE_SVG));
         for (const button of this.buttons) {
             div.appendChild(button);
         }
@@ -177,6 +190,9 @@ export class ToolBox {
                     break;
                 case "VerticalLine":
                     this._drawingTool.addNewDrawing(new VerticalLine(d.points[0], d.options));
+                    break;
+                case "Measure":
+                    this._drawingTool.addNewDrawing(new Measure(d.points[0], d.points[1], d.options));
                     break;
             }
         })
