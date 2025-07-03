@@ -231,12 +231,13 @@ export class Handler {
     };
   }
 
-  createToolBox() {
+  createToolBox(enableDeleteHotkey: boolean = true) {
     this.toolBox = new ToolBox(
       this.id,
       this.chart,
       this.series,
-      this.commandFunctions
+      this.commandFunctions,
+      enableDeleteHotkey
     );
     this.div.appendChild(this.toolBox.div);
   }

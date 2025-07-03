@@ -4,14 +4,14 @@ from typing import Callable, Literal, Optional
 
 
 class ToolBox:
-    def __init__(self, chart):
+    def __init__(self, chart, enable_delete_hotkey: bool = True):
         self.chart = chart
         self.run_script = chart.run_script
         self.id = chart.id
         self._save_under = None
         self.drawings = {}
         chart.win.handlers[f"save_drawings{self.id}"] = self._save_drawings
-        self.run_script(f"{self.id}.createToolBox()")
+        self.run_script(f"{self.id}.createToolBox({str(enable_delete_hotkey).lower()})")
 
     def save_drawings_under(self, widget: "Widget"):
         """

@@ -178,3 +178,5 @@ export abstract class Drawing extends PluginBase {
     protected abstract _moveToState(state: InteractionState): void;
     protected abstract _mouseIsOverDrawing(param: MouseEventParams): boolean;
 }
+
+(window as any).Drawing = Drawing;

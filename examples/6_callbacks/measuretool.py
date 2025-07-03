@@ -12,8 +12,13 @@ def on_measure_event(toolbox, event_type, points):
     print(f"Measure event: {event_type}, points: {points}")
 
 if __name__ == '__main__':
-    chart = Chart(toolbox=True)
-    chart.toolbox.set_measure_length_display('time')
+    # Пример: отключить удаление выделенного рисунка по клавише Delete
+    # chart = Chart(toolbox=False)
+    # chart.toolbox = chart.ToolBox(chart, enable_delete_hotkey=False)
+
+    # По умолчанию Delete работает:
+    chart = Chart(toolbox=True, debug=True)  # или chart.ToolBox(chart, enable_delete_hotkey=True)
+    # chart.toolbox.set_measure_length_display('time')
     chart.legend(True)
 
     chart.topbar.textbox('symbol', 'TSLA')
@@ -25,5 +30,6 @@ if __name__ == '__main__':
     chart.toolbox.measure(func=on_measure_event)
 
     print("Use the toolbox to select the Measure tool (rectangle icon) and draw on the chart to measure price and time differences.")
+    print("Выделите рисунок и нажмите Delete для удаления (если включено).")
 
     chart.show(block=True)

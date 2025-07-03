@@ -47,19 +47,36 @@ export class ToolBox {
     private _handlerID: string;
 
     private _drawingTool: DrawingTool;
+    private _enableDeleteHotkey: boolean;
 
-    constructor(handlerID: string, chart: IChartApi, series: ISeriesApi<SeriesType>, commandFunctions: Function[]) {
+    constructor(handlerID: string, chart: IChartApi, series: ISeriesApi<SeriesType>, commandFunctions: Function[], enableDeleteHotkey: boolean = true) {
         this._handlerID = handlerID;
         this._commandFunctions = commandFunctions;
         this._drawingTool = new DrawingTool(chart, series, () => this.removeActiveAndSave());
         this.div = this._makeToolBox()
         new ContextMenu(this.saveDrawings, this._drawingTool);
+        this._enableDeleteHotkey = enableDeleteHotkey;
 
         commandFunctions.push((event: KeyboardEvent) => {
             if ((event.metaKey || event.ctrlKey) && event.code === 'KeyZ') {
                 const drawingToDelete = this._drawingTool.drawings.pop();
                 if (drawingToDelete) this._drawingTool.delete(drawingToDelete)
                 return true;
+            }
+            if (this._enableDeleteHotkey && event.code === 'Delete') {
+                const hovered = (window as any).Drawing?.hoveredObject;
+                const lastHovered = (window as any).Drawing?.lastHoveredObject;
+                console.log('Delete pressed! hoveredObject:', hovered, 'lastHoveredObject:', lastHovered, 'drawings:', this._drawingTool.drawings);
+                if (hovered) {
+                    this._drawingTool.delete(hovered);
+                    this.saveDrawings();
+                    return true;
+                }
+                if (lastHovered) {
+                    this._drawingTool.delete(lastHovered);
+                    this.saveDrawings();
+                    return true;
+                }
             }
             return false;
         });
